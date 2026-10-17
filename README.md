@@ -58,7 +58,7 @@ Tests need Node.js installed (the CDK library uses it under the hood).
 
 Prerequisites: an AWS account, AWS CLI configured, Node.js, and `npm install -g aws-cdk`.
 
-1. **Enable Bedrock model access** in the console for your region. The default model is Claude 3 Haiku; check which models are available in your region and override if needed, e.g. `-c model_id=apac.anthropic.claude-3-haiku-20240307-v1:0` for a cross-region inference profile.
+1. **Enable Bedrock model access** in the console for your region. The default model is Claude Haiku 5.5 (`anthropic.claude-haiku-5-5`), called at low effort; if your region only serves it through a cross-region inference profile, override with `-c model_id=<profile id>`. To skip Bedrock entirely and run at zero model cost, deploy with `-c llm_enabled=false`: ambiguous issues are then marked `unclassified` and the classifier gets no Bedrock permissions.
 2. Bootstrap once: `cdk bootstrap`
 3. Deploy, with a budget alert: `cdk deploy -c budget_email=you@example.com -c budget_usd=10`
 4. Note the `BucketName` output, then upload data:

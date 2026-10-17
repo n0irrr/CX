@@ -13,7 +13,9 @@ class FakeBedrock:
     def converse(self, **kwargs):
         self.calls += 1
         items = json.loads(kwargs["messages"][0]["content"][0]["text"])
-        return {"output": {"message": {"content": [{"text": self.responder(items)}]}}}
+        self.last_kwargs = kwargs
+        content = [{"reasoningContent": {"reasoningText": {"text": ""}}}, {"text": self.responder(items)}]
+        return {"output": {"message": {"content": content}}}
 
 
 def _records(*notes):
@@ -73,3 +75,18 @@ def test_llm_calls_are_batched(monkeypatch):
 def test_parse_labels_tolerates_wrapping_text():
     text = 'Here you go:\n[{"id": "CX-000001", "category": "documentation"}]\nDone.'
     assert classifier._parse_labels(text) == {"CX-000001": "documentation"}
+
+
+def test_rules_only_mode_skips_llm(monkeypatch):
+    monkeypatch.setattr(classifier, "LLM_ENABLED", False)
+    bedrock = FakeBedrock(lambda items: "[]")
+    out = classifier.classify(_records("Loose termination", "Unit tripped under load"), bedrock)
+
+    assert bedrock.calls == 0
+    assert [r["classified_by"] for r in out] == ["rules", "fallback"]
+
+
+def test_request_has_no_sampling_params():
+    bedrock = FakeBedrock(lambda items: "[]")
+    classifier.classify(_records("Unit tripped under load"), bedrock)
+    assert "temperature" not in bedrock.last_kwargs["inferenceConfig"]

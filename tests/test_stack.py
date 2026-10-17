@@ -4,8 +4,8 @@ from aws_cdk.assertions import Match, Template
 from infra.stack import CxPipelineStack
 
 
-def _template() -> Template:
-    app = cdk.App(context={"budget_email": "test@example.com"})
+def _template(**context) -> Template:
+    app = cdk.App(context={"budget_email": "test@example.com", **context})
     return Template.from_stack(CxPipelineStack(app, "Test", env=cdk.Environment(region="ap-southeast-1")))
 
 
@@ -48,4 +48,23 @@ def test_bucket_is_locked_down():
                 "RestrictPublicBuckets": True,
             }
         },
+    )
+
+
+def _bedrock_statements(t: Template) -> list:
+    return [
+        st
+        for policy in t.find_resources("AWS::IAM::Policy").values()
+        for st in policy["Properties"]["PolicyDocument"]["Statement"]
+        if st["Action"] == "bedrock:InvokeModel"
+    ]
+
+
+def test_rules_only_mode_drops_bedrock_access():
+    assert _bedrock_statements(_template())
+    t = _template(llm_enabled="false")
+    assert not _bedrock_statements(t)
+    t.has_resource_properties(
+        "AWS::Lambda::Function",
+        {"Handler": "classifier.handler", "Environment": {"Variables": Match.object_like({"LLM_ENABLED": "false"})}},
     )

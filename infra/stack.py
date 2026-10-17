@@ -43,7 +43,8 @@ class CxPipelineStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         ctx = self.node.try_get_context
-        model_id = ctx("model_id") or "anthropic.claude-3-haiku-20240307-v1:0"
+        model_id = ctx("model_id") or "anthropic.claude-haiku-5-5"
+        llm_enabled = str(ctx("llm_enabled") or "true").lower() == "true"
 
         bucket = s3.Bucket(
             self,
@@ -68,6 +69,7 @@ class CxPipelineStack(Stack):
             Duration.minutes(5),
             {
                 "MODEL_ID": model_id,
+                "LLM_ENABLED": str(llm_enabled).lower(),
                 "BATCH_SIZE": "20",
                 "CLEAN_PREFIX": "clean/",
                 "ENRICHED_PREFIX": "enriched/",
@@ -79,15 +81,16 @@ class CxPipelineStack(Stack):
         bucket.grant_put(validator, "quarantine/*")
         bucket.grant_read(classifier, "clean/*")
         bucket.grant_put(classifier, "enriched/*")
-        classifier.add_to_role_policy(
-            iam.PolicyStatement(
-                actions=["bedrock:InvokeModel"],
-                resources=[
-                    "arn:aws:bedrock:*::foundation-model/*",
-                    f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
-                ],
+        if llm_enabled:
+            classifier.add_to_role_policy(
+                iam.PolicyStatement(
+                    actions=["bedrock:InvokeModel"],
+                    resources=[
+                        "arn:aws:bedrock:*::foundation-model/*",
+                        f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
+                    ],
+                )
             )
-        )
 
         bucket.add_event_notification(
             s3.EventType.OBJECT_CREATED,

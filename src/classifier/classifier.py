@@ -33,7 +33,8 @@ SYSTEM_PROMPT = (
     '{"id": <id>, "category": <category>} with exactly one category per issue.'
 )
 
-MODEL_ID = os.environ.get("MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+MODEL_ID = os.environ.get("MODEL_ID", "anthropic.claude-haiku-5-5")
+LLM_ENABLED = os.environ.get("LLM_ENABLED", "true").lower() == "true"
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
 CLEAN_PREFIX = os.environ.get("CLEAN_PREFIX", "clean/")
 ENRICHED_PREFIX = os.environ.get("ENRICHED_PREFIX", "enriched/")
@@ -77,9 +78,11 @@ def llm_classify(records: list[dict], client=None) -> dict[str, str]:
             modelId=MODEL_ID,
             system=[{"text": SYSTEM_PROMPT}],
             messages=[{"role": "user", "content": [{"text": payload}]}],
-            inferenceConfig={"maxTokens": 40 * len(batch) + 64, "temperature": 0},
+            inferenceConfig={"maxTokens": 4096},
+            additionalModelRequestFields={"output_config": {"effort": "low"}},
         )
-        labels |= _parse_labels(resp["output"]["message"]["content"][0]["text"])
+        text = "".join(block.get("text", "") for block in resp["output"]["message"]["content"])
+        labels |= _parse_labels(text)
     return labels
 
 
@@ -92,7 +95,7 @@ def classify(records: list[dict], client=None) -> list[dict]:
             pending.append(r)
 
     if pending:
-        labels = llm_classify(pending, client)
+        labels = llm_classify(pending, client) if LLM_ENABLED else {}
         for r in pending:
             category = labels.get(r["issue_id"])
             r |= {"category": category or "unclassified", "classified_by": "llm" if category else "fallback"}

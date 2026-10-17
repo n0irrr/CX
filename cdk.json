@@ -1,0 +1,11 @@
+{
+  "app": "python3 app.py",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk*.json", "tests", "dashboard", "scripts", "data", "**/__pycache__"]
+  },
+  "context": {
+    "model_id": "anthropic.claude-3-haiku-20240307-v1:0",
+    "budget_usd": 10
+  }
+}

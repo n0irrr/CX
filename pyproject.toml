@@ -1,0 +1,18 @@
+[project]
+name = "cx-pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src/validator", "src/classifier", "scripts"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["infra", "validator", "classifier", "generate_data"]

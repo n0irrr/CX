@@ -15,4 +15,4 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["infra", "validator", "classifier", "generate_data"]
+known-first-party = ["infra", "validator", "classifier", "generate_data", "evaluate"]

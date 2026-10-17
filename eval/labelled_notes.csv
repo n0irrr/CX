@@ -1,0 +1,71 @@
+notes,category
+UPS-SIN1-A-03 inverter failed at 40% load step,equipment_defect
+Bearing noise on CHL-SIN2-B-02 compressor during run test,equipment_defect
+Burnt contactor found in GEN-SIN1-A-01 control panel,equipment_defect
+Faulty PSU in PDU-JKT1-A-07 replaced under warranty,equipment_defect
+CRAH-SIN2-C-04 EC fan seized on start-up,equipment_defect
+Chiller CHL-SIN1-B-01 refrigerant pressure dropping overnight; vendor found cracked brazed joint,equipment_defect
+Transformer TX-SIN2-A-02 winding temperature alarm with no load; factory fault suspected,equipment_defect
+Generator would not crank on first attempt; starter motor dead on arrival,equipment_defect
+Battery string on UPS-SIN1-B-05 shows two cells below float voltage straight out of the crate,equipment_defect
+PDU-SIN2-B-03 display blank after energisation; manufacturer shipping replacement board,equipment_defect
+Water on floor under CRAH-JKT1-A-02; drain pan cracked from factory,equipment_defect
+Switchgear SWG-SIN1-A-01 breaker fails to close on command; mechanism jammed,equipment_defect
+Vibration on GEN-SIN2-C-02 well above vendor limit at full load,equipment_defect
+UPS static switch module DOA,equipment_defect
+Loose termination on SWG-SIN2-A-03 outgoing feeder,installation_workmanship
+Earth bond missing between PDU-SIN1-A-04 frame and rack,installation_workmanship
+Cable tray support on CRAH-SIN2-B-01 not fixed to slab,installation_workmanship
+Pipework insulation on CHL-JKT1-A-01 left unsealed at valves,installation_workmanship
+Phase rotation reversed on TX-SIN1-B-02 secondary; contractor wired L2 and L3 swapped,installation_workmanship
+Busbar bolts on SWG-SIN1-B-04 not torque marked,installation_workmanship
+Fire stopping not reinstated where cables pass through wall at UPS room,installation_workmanship
+Condensate line on CRAH-SIN1-A-06 installed with back-fall,installation_workmanship
+Gland plate on GEN-SIN2-A-01 panel drilled oversize and left open,installation_workmanship
+Contractor installed PDU-JKT1-A-02 on wrong rack row,installation_workmanship
+Flexible connection on chiller CHL-SIN2-C-01 fitted under tension,installation_workmanship
+Debris left inside SWG-SIN2-B-02 cubicle after fit-out,installation_workmanship
+Labels on UPS-SIN1-A-02 output breakers do not match schedule,installation_workmanship
+Anchor bolts on TX-SIN2-C-01 plinth not grouted,installation_workmanship
+Breaker rating on SWG-SIN1-A-02 below calculated fault level,design_issue
+Insufficient clearance behind PDU-SIN2-A-05 for maintenance,design_issue
+CHL-SIN1-B-03 capacity short of N+1 at 35C ambient,design_issue
+Generator exhaust routed towards CRAH fresh air intake,design_issue
+Single line diagram shows no bypass for UPS-JKT1-A-01,design_issue
+Floor loading at chiller plinth exceeds slab capacity per structural review,design_issue
+Selected cable size for TX-SIN2-B-01 feeder fails voltage drop check,design_issue
+Hot aisle containment layout blocks CRAH-SIN1-C-02 return path,design_issue
+Discrimination study shows upstream breaker trips before downstream on PDU fault,design_issue
+Spec mismatch between drawing and submitted UPS model,design_issue
+No space allowed for future second generator as per brief,design_issue
+Day tank vent terminates inside plant room,design_issue
+Chilled water pipe sized for 6K delta T but plant runs at 8K,design_issue
+Two CRAH units on same electrical feed defeats redundancy,design_issue
+BMS shows CRAH-SIN2-A-03 as offline although unit running,controls_integration
+PLC logic on GEN-SIN1-A-02 does not shed load in correct order,controls_integration
+SCADA alarm for SWG-SIN1-B-01 breaker trip not received,controls_integration
+BACnet device ID clash between CHL-SIN2-B-02 and CHL-SIN2-B-03,controls_integration
+Chiller staging does not follow sequence of operation,controls_integration
+Generator start signal from ATS reaches controller 9 seconds late,controls_integration
+Temperature on monitoring screen reads 10x actual for CRAH-JKT1-A-04,controls_integration
+UPS-SIN1-B-01 on-battery alarm not mapped to EPMS,controls_integration
+Lead/lag rotation of pumps not happening at scheduled time,controls_integration
+Setpoint on CRAH-SIN1-A-01 resets to factory default after power cycle,controls_integration
+Firmware on PDU-SIN2-C-02 meters incompatible with head-end polling,controls_integration
+Load bank test log missing kW trend from power monitoring system,controls_integration
+Leak detection rope alarm reaches BMS but no email notification sent,controls_integration
+Interlock between SWG-SIN2-A-01 incomers allows both closed simultaneously in software,controls_integration
+O&M manual for TX-SIN1-A-01 not provided,documentation
+Submittal for CRAH-SIN2-B-05 filters still pending approval,documentation
+As-built drawing for SWG-SIN1-B-02 not updated after change,documentation
+Datasheet for UPS-JKT1-A-03 battery not in handover pack,documentation
+Factory acceptance test report for GEN-SIN2-B-01 not received,documentation
+Commissioning script for CHL-SIN1-A-02 not signed off by witness,documentation
+Warranty letter for PDU fleet outstanding,documentation
+Torque records for SWG-SIN2-C-01 busbars not handed over,documentation
+Spare parts list missing from chiller handover,documentation
+Calibration certificates for CRAH-SIN1-B-03 sensors not uploaded,documentation
+Test sheets for TX-SIN2-A-02 insulation resistance incomplete,documentation
+Point schedule for BMS not issued to integrator,documentation
+Asset register missing serial numbers for UPS-SIN2-A-01,documentation
+Training records for generator operators not provided,documentation

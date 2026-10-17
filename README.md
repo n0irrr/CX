@@ -24,12 +24,28 @@ flowchart LR
 |---|---|
 | Validation | Schema, enum, ID format, date parsing and ordering, status/closure consistency, duplicate IDs. Bad rows go to `quarantine/` with machine-readable reasons; a file missing columns is quarantined whole rather than crashing. |
 | Error handling | Async retries (2), SQS dead-letter queue per function, adaptive retries on Bedrock throttling, malformed LLM output falls back to `unclassified` instead of failing the batch. |
-| Cost | Keyword rules classify roughly 75% of issues for free; only ambiguous notes reach Bedrock, batched 20 per call with short structured JSON output. Athena uses partition projection and a 1 GB per-query scan cutoff. Optional AWS Budgets alert. |
+| Cost | Keyword rules classify roughly 75% of generated issues for free (29% of the hand-written evaluation set, see below); only ambiguous notes reach Bedrock, batched 20 per call with short structured JSON output. Athena uses partition projection and a 1 GB per-query scan cutoff. Optional AWS Budgets alert. |
 | Release safety | Each Lambda has a `live` alias. CodeDeploy shifts 10% of traffic to a new version for 5 minutes, then 100%; a CloudWatch errors alarm on the alias triggers automatic rollback. |
 | Observability | Both functions emit CloudWatch Embedded Metric Format counts (valid, quarantined, classified by rules / LLM / fallback). |
 | Infrastructure | AWS CDK (Python); S3 is private, encrypted, SSL-only. GitHub Actions runs lint, tests and synth on every push, and deploys via OIDC when enabled. |
 
 Root-cause categories: `equipment_defect`, `installation_workmanship`, `design_issue`, `controls_integration`, `documentation`.
+
+## Evaluation
+
+`eval/labelled_notes.csv` holds 70 hand-written, hand-labelled notes (14 per category), phrased independently of the generator templates so the rules are not graded on the text they were written from.
+
+```bash
+PYTHONPATH=src/classifier python scripts/evaluate.py          # rules only, no AWS needed
+PYTHONPATH=src/classifier python scripts/evaluate.py --llm    # rule misses go to Bedrock; reports tokens and cost per 1,000 issues
+```
+
+| Mode | Accuracy | Rules coverage | Rules precision | Cost per 1,000 issues |
+|---|---|---|---|---|
+| Rules only | 27% | 29% | 95% | $0 |
+| Rules + Haiku 5.5 | pending first AWS run | 29% | 95% | pending |
+
+The rules are precise but narrow: on realistic phrasing most issues fall through to the model, so the free share is far lower than on synthetic data.
 
 ## Layout
 
@@ -39,6 +55,7 @@ infra/stack.py            All infrastructure
 src/validator/            Validator Lambda
 src/classifier/           Rules + Bedrock classifier Lambda
 scripts/generate_data.py  Synthetic issue log generator
+scripts/evaluate.py       Accuracy and cost against eval/labelled_notes.csv
 dashboard/app.py          Streamlit dashboard on Athena
 tests/                    Unit tests and CDK template assertions
 ```

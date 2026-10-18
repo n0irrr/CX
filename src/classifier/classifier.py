@@ -146,6 +146,7 @@ def _emit_metrics(counts: dict[str, int]) -> None:
                     ],
                 },
                 "Stage": "classifier",
+                "ModelId": MODEL_ID,
                 **names,
             }
         )

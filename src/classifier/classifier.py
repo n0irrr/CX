@@ -33,7 +33,7 @@ SYSTEM_PROMPT = (
     '{"id": <id>, "category": <category>} with exactly one category per issue.'
 )
 
-MODEL_ID = os.environ.get("MODEL_ID", "anthropic.claude-haiku-5-5")
+MODEL_ID = os.environ.get("MODEL_ID", "global.amazon.nova-2-lite-v1:0")
 LLM_ENABLED = os.environ.get("LLM_ENABLED", "true").lower() == "true"
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
 CLEAN_PREFIX = os.environ.get("CLEAN_PREFIX", "clean/")

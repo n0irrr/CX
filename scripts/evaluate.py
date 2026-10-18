@@ -55,8 +55,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Score the classifier against a hand-labelled set")
     parser.add_argument("--set", type=Path, default=DEFAULT_SET)
     parser.add_argument("--llm", action="store_true", help="send rule misses to Bedrock (needs AWS credentials)")
-    parser.add_argument("--input-price", type=float, default=0.10, help="USD per 1M input tokens")
-    parser.add_argument("--output-price", type=float, default=0.50, help="USD per 1M output tokens")
+    parser.add_argument("--input-price", type=float, default=0.41, help="USD per 1M input tokens")
+    parser.add_argument("--output-price", type=float, default=3.39, help="USD per 1M output tokens")
     args = parser.parse_args()
 
     rows = load(args.set)

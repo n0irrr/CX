@@ -43,9 +43,11 @@ PYTHONPATH=src/classifier python scripts/evaluate.py --llm    # rule misses go t
 | Mode | Accuracy | Rules coverage | Rules precision | Cost per 1,000 issues |
 |---|---|---|---|---|
 | Rules only | 27% | 29% | 95% | $0 |
-| Rules + Haiku 5.5 | pending first AWS run | 29% | 95% | pending |
+| Rules + Nova Micro | 79% | 29% | 95% | ~$0.005 |
+| Rules + Nova Lite | 93% | 29% | 95% | ~$0.007 |
+| **Rules + Nova 2 Lite** (default) | **94%** | 29% | 95% | ~$0.056 |
 
-The rules are precise but narrow: on realistic phrasing most issues fall through to the model, so the free share is far lower than on synthetic data.
+Costs use ap-southeast-1 on-demand token prices. The rules are precise but narrow: on realistic phrasing most issues fall through to the model, so the free share is far lower than on synthetic data. Nova Lite matches Nova 2 Lite within one note at an eighth of the cost; switch with `-c model_id=apac.amazon.nova-lite-v1:0`.
 
 ## Layout
 
@@ -75,7 +77,7 @@ Tests need Node.js installed (the CDK library uses it under the hood).
 
 Prerequisites: an AWS account, AWS CLI configured, Node.js, and `npm install -g aws-cdk`.
 
-1. **Enable Bedrock model access** in the console for your region. The default model is Claude Haiku 5.5 (`anthropic.claude-haiku-5-5`), called at low effort; if your region only serves it through a cross-region inference profile, override with `-c model_id=<profile id>`. To skip Bedrock entirely and run at zero model cost, deploy with `-c llm_enabled=false`: ambiguous issues are then marked `unclassified` and the classifier gets no Bedrock permissions.
+1. **Enable Bedrock model access** in the console for your region. The default model is Amazon Nova 2 Lite through its global inference profile (`global.amazon.nova-2-lite-v1:0`); any Bedrock Converse model works via `-c model_id=<id>` (Claude 5 models are called at low effort). To skip Bedrock entirely and run at zero model cost, deploy with `-c llm_enabled=false`: ambiguous issues are then marked `unclassified` and the classifier gets no Bedrock permissions.
 2. Bootstrap once: `cdk bootstrap`
 3. Deploy, with a budget alert: `cdk deploy -c budget_email=you@example.com -c budget_usd=10`
 4. Note the `BucketName` output, then upload data:

@@ -5,7 +5,7 @@
     "exclude": ["README.md", "cdk*.json", "tests", "dashboard", "scripts", "data", "**/__pycache__"]
   },
   "context": {
-    "model_id": "anthropic.claude-haiku-5-5",
+    "model_id": "global.amazon.nova-2-lite-v1:0",
     "llm_enabled": "true",
     "budget_usd": 10
   }

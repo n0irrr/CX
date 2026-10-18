@@ -43,7 +43,7 @@ class CxPipelineStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         ctx = self.node.try_get_context
-        model_id = ctx("model_id") or "anthropic.claude-haiku-5-5"
+        model_id = ctx("model_id") or "global.amazon.nova-2-lite-v1:0"
         llm_enabled = str(ctx("llm_enabled") or "true").lower() == "true"
 
         bucket = s3.Bucket(

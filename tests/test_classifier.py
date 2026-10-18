@@ -90,3 +90,16 @@ def test_request_has_no_sampling_params():
     bedrock = FakeBedrock(lambda items: "[]")
     classifier.classify(_records("Unit tripped under load"), bedrock)
     assert "temperature" not in bedrock.last_kwargs["inferenceConfig"]
+
+
+@pytest.mark.parametrize(
+    ("model_id", "has_effort"),
+    [
+        ("global.anthropic.claude-haiku-5-5", True),
+        ("anthropic.claude-sonnet-5", True),
+        ("global.anthropic.claude-haiku-4-5-20251001-v1:0", False),
+        ("global.amazon.nova-2-lite-v1:0", False),
+    ],
+)
+def test_effort_only_sent_to_models_that_support_it(model_id, has_effort):
+    assert bool(classifier._model_fields(model_id)) is has_effort

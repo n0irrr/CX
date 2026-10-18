@@ -68,6 +68,13 @@ def _parse_labels(text: str) -> dict[str, str]:
     }
 
 
+def _model_fields(model_id: str) -> dict:
+    # Effort is a Claude 5 setting; other models reject it.
+    if re.search(r"claude-[a-z]+-5", model_id):
+        return {"additionalModelRequestFields": {"output_config": {"effort": "low"}}}
+    return {}
+
+
 def llm_classify(records: list[dict], client=None) -> dict[str, str]:
     client = client or _bedrock()
     labels = {}
@@ -79,7 +86,7 @@ def llm_classify(records: list[dict], client=None) -> dict[str, str]:
             system=[{"text": SYSTEM_PROMPT}],
             messages=[{"role": "user", "content": [{"text": payload}]}],
             inferenceConfig={"maxTokens": 4096},
-            additionalModelRequestFields={"output_config": {"effort": "low"}},
+            **_model_fields(MODEL_ID),
         )
         text = "".join(block.get("text", "") for block in resp["output"]["message"]["content"])
         labels |= _parse_labels(text)

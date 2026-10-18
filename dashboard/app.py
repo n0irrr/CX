@@ -1,6 +1,7 @@
 import os
 import time
 
+import altair as alt
 import boto3
 import pandas as pd
 import streamlit as st
@@ -60,11 +61,16 @@ c4.metric("Quarantine rate", f"{quarantined / received:.1%}" if received else "n
 left, right = st.columns(2)
 with left:
     st.subheader("Issues by root cause")
-    st.bar_chart(
-        query(f"SELECT category, count(*) AS issues FROM issues WHERE {window} GROUP BY 1 ORDER BY 2 DESC"),
-        x="category",
-        y="issues",
-        horizontal=True,
+    causes = query(f"SELECT category, count(*) AS issues FROM issues WHERE {window} GROUP BY 1")
+    st.altair_chart(
+        alt.Chart(causes)
+        .mark_bar()
+        .encode(
+            x=alt.X("issues:Q", scale=alt.Scale(zero=True)),
+            y=alt.Y("category:N", sort="-x", title=None),
+            tooltip=["category", "issues"],
+        ),
+        use_container_width=True,
     )
 with right:
     st.subheader("Open issues by equipment and severity")

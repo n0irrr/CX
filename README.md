@@ -108,9 +108,9 @@ Change anything in `src/validator/validator.py` and redeploy: CodeDeploy runs th
 
 Measured on the live stack: a deliberately failing classifier received 10% of traffic, 4 of 40 invocations hit it and failed, the errors alarm fired about a minute after the first error, and CodeDeploy moved the `live` alias back to the previous version 10 seconds later: about 70 seconds from first error to full rollback, with no manual action. CloudFormation then reverted the stack. The errors alarm only catches crashing releases; the quality gate (added after this run) covers releases that run cleanly but label issues wrongly. Its 20 samples come from the evaluation set, so it is a regression check rather than an independent accuracy measure.
 
-![CodeDeploy history: canary succeeded, broken release stopped, CloudFormation rollback redeploy succeeded](docs/img/codedeploy-history.png)
+![CodeDeploy history: canary succeeded, broken release stopped, automatic rollback succeeded](docs/img/codedeploy-history.png)
 
-Bottom to top: the successful canary, the broken release stopped by the alarm, and the deployment CloudFormation started to restore the previous version during its stack rollback.
+Bottom to top: the successful canary, the broken release stopped by the alarm, and the rollback deployment CodeDeploy triggered automatically, which put `live` back on the previous version in 2 seconds.
 
 | Canary stopped by the alarm | Errors alarm | Stack reverted |
 |---|---|---|

@@ -18,6 +18,14 @@ flowchart LR
     A --> D[Streamlit dashboard]
 ```
 
+![Streamlit dashboard: KPIs, issues by root cause, open issues by equipment and severity](docs/img/dashboard-top.png)
+
+<details><summary>Dashboard tables: days to close by contractor, quarantine reasons, classification method</summary>
+
+![Dashboard tables](docs/img/dashboard-tables.png)
+
+</details>
+
 ## Design
 
 | Concern | Approach |
@@ -99,6 +107,10 @@ Tear down with `cdk destroy` (the bucket and its contents are deleted).
 Change anything in `src/validator/validator.py` and redeploy: CodeDeploy runs the canary, visible under CodeDeploy > Deployments. To watch a rollback, make the handler raise an exception, deploy, then upload a CSV during the 5-minute window. The errors alarm fires and traffic returns to the previous version.
 
 Measured on the live stack: a deliberately failing classifier received 10% of traffic, 4 of 40 invocations hit it and failed, the errors alarm fired about a minute after the first error, and CodeDeploy moved the `live` alias back to the previous version 10 seconds later: about 70 seconds from first error to full rollback, with no manual action. CloudFormation then reverted the stack. The errors alarm only catches crashing releases; the quality gate (added after this run) covers releases that run cleanly but label issues wrongly. Its 20 samples come from the evaluation set, so it is a regression check rather than an independent accuracy measure.
+
+![CodeDeploy history: canary succeeded, broken release stopped, CloudFormation rollback redeploy succeeded](docs/img/codedeploy-history.png)
+
+Bottom to top: the successful canary, the broken release stopped by the alarm, and the deployment CloudFormation started to restore the previous version during its stack rollback.
 
 | Canary stopped by the alarm | Errors alarm | Stack reverted |
 |---|---|---|

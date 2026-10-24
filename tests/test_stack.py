@@ -68,3 +68,29 @@ def test_rules_only_mode_drops_bedrock_access():
         "AWS::Lambda::Function",
         {"Handler": "classifier.handler", "Environment": {"Variables": Match.object_like({"LLM_ENABLED": "false"})}},
     )
+
+
+def test_quality_gate_runs_before_classifier_traffic_shift():
+    t = _template()
+    gate = t.find_resources("AWS::Lambda::Function", {"Properties": {"Handler": "quality_gate.handler"}})
+    assert len(gate) == 1
+    t.has_resource_properties("AWS::CodeDeploy::DeploymentGroup", {"DeploymentConfigName": Match.any_value()})
+    t.has_resource(
+        "AWS::Lambda::Alias",
+        {
+            "UpdatePolicy": {
+                "CodeDeployLambdaAliasUpdate": Match.object_like({"BeforeAllowTrafficHook": Match.any_value()})
+            }
+        },
+    )
+    assert not _template(llm_enabled="false").find_resources(
+        "AWS::Lambda::Function", {"Properties": {"Handler": "quality_gate.handler"}}
+    )
+
+
+def test_alerts_email_on_failures_and_quarantine_spikes():
+    t = _template(alert_email="ops@example.com")
+    t.has_resource_properties("AWS::SNS::Subscription", {"Protocol": "email", "Endpoint": "ops@example.com"})
+    alarms = t.find_resources("AWS::CloudWatch::Alarm")
+    assert len(alarms) == 5
+    assert all(a["Properties"].get("AlarmActions") for a in alarms.values())

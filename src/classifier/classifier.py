@@ -127,6 +127,8 @@ def process(bucket: str, key: str) -> dict:
 
 
 def handler(event, _context):
+    if "records" in event:
+        return classify(event["records"])
     return [process(r["s3"]["bucket"]["name"], unquote_plus(r["s3"]["object"]["key"])) for r in event["Records"]]
 
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
-pythonpath = [".", "src/validator", "src/classifier", "scripts"]
+pythonpath = [".", "src/validator", "src/classifier", "src/quality_gate", "scripts"]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -15,4 +15,4 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["infra", "validator", "classifier", "generate_data", "evaluate"]
+known-first-party = ["infra", "validator", "classifier", "quality_gate", "generate_data", "evaluate"]

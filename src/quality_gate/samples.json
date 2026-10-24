@@ -1,0 +1,82 @@
+[
+ {
+  "notes": "UPS-SIN1-A-03 inverter failed at 40% load step",
+  "category": "equipment_defect"
+ },
+ {
+  "notes": "Bearing noise on CHL-SIN2-B-02 compressor during run test",
+  "category": "equipment_defect"
+ },
+ {
+  "notes": "Burnt contactor found in GEN-SIN1-A-01 control panel",
+  "category": "equipment_defect"
+ },
+ {
+  "notes": "Faulty PSU in PDU-JKT1-A-07 replaced under warranty",
+  "category": "equipment_defect"
+ },
+ {
+  "notes": "Loose termination on SWG-SIN2-A-03 outgoing feeder",
+  "category": "installation_workmanship"
+ },
+ {
+  "notes": "Earth bond missing between PDU-SIN1-A-04 frame and rack",
+  "category": "installation_workmanship"
+ },
+ {
+  "notes": "Cable tray support on CRAH-SIN2-B-01 not fixed to slab",
+  "category": "installation_workmanship"
+ },
+ {
+  "notes": "Pipework insulation on CHL-JKT1-A-01 left unsealed at valves",
+  "category": "installation_workmanship"
+ },
+ {
+  "notes": "Breaker rating on SWG-SIN1-A-02 below calculated fault level",
+  "category": "design_issue"
+ },
+ {
+  "notes": "Insufficient clearance behind PDU-SIN2-A-05 for maintenance",
+  "category": "design_issue"
+ },
+ {
+  "notes": "CHL-SIN1-B-03 capacity short of N+1 at 35C ambient",
+  "category": "design_issue"
+ },
+ {
+  "notes": "Generator exhaust routed towards CRAH fresh air intake",
+  "category": "design_issue"
+ },
+ {
+  "notes": "BMS shows CRAH-SIN2-A-03 as offline although unit running",
+  "category": "controls_integration"
+ },
+ {
+  "notes": "PLC logic on GEN-SIN1-A-02 does not shed load in correct order",
+  "category": "controls_integration"
+ },
+ {
+  "notes": "SCADA alarm for SWG-SIN1-B-01 breaker trip not received",
+  "category": "controls_integration"
+ },
+ {
+  "notes": "BACnet device ID clash between CHL-SIN2-B-02 and CHL-SIN2-B-03",
+  "category": "controls_integration"
+ },
+ {
+  "notes": "O&M manual for TX-SIN1-A-01 not provided",
+  "category": "documentation"
+ },
+ {
+  "notes": "Submittal for CRAH-SIN2-B-05 filters still pending approval",
+  "category": "documentation"
+ },
+ {
+  "notes": "As-built drawing for SWG-SIN1-B-02 not updated after change",
+  "category": "documentation"
+ },
+ {
+  "notes": "Datasheet for UPS-JKT1-A-03 battery not in handover pack",
+  "category": "documentation"
+ }
+]

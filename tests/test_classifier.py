@@ -103,3 +103,9 @@ def test_request_has_no_sampling_params():
 )
 def test_effort_only_sent_to_models_that_support_it(model_id, has_effort):
     assert bool(classifier._model_fields(model_id)) is has_effort
+
+
+def test_direct_invoke_classifies_without_s3(monkeypatch):
+    monkeypatch.setattr(classifier, "LLM_ENABLED", False)
+    out = classifier.handler({"records": [{"issue_id": "1", "notes": "Loose termination on incomer"}]}, None)
+    assert out[0]["category"] == "installation_workmanship"

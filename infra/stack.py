@@ -4,12 +4,15 @@ from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack
 from aws_cdk import aws_athena as athena
 from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cloudwatch as cw
+from aws_cdk import aws_cloudwatch_actions as cw_actions
 from aws_cdk import aws_codedeploy as codedeploy
 from aws_cdk import aws_glue as glue
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_s3_notifications as s3n
+from aws_cdk import aws_sns as sns
+from aws_cdk import aws_sns_subscriptions as subs
 from constructs import Construct
 
 SRC = Path(__file__).resolve().parent.parent / "src"
@@ -46,6 +49,10 @@ class CxPipelineStack(Stack):
         model_id = ctx("model_id") or "global.amazon.nova-2-lite-v1:0"
         llm_enabled = str(ctx("llm_enabled") or "true").lower() == "true"
 
+        self.alerts = sns.Topic(self, "Alerts", display_name="CX pipeline alerts")
+        if alert_email := ctx("alert_email"):
+            self.alerts.add_subscription(subs.EmailSubscription(alert_email))
+
         bucket = s3.Bucket(
             self,
             "DataBucket",
@@ -57,13 +64,13 @@ class CxPipelineStack(Stack):
             lifecycle_rules=[s3.LifecycleRule(prefix="athena-results/", expiration=Duration.days(7))],
         )
 
-        validator, validator_live = self._function(
+        validator, validator_live, _ = self._function(
             "Validator",
             "validator",
             Duration.seconds(60),
             {"CLEAN_PREFIX": "clean/", "QUARANTINE_PREFIX": "quarantine/"},
         )
-        classifier, classifier_live = self._function(
+        classifier, classifier_live, classifier_deployment = self._function(
             "Classifier",
             "classifier",
             Duration.minutes(5),
@@ -82,6 +89,7 @@ class CxPipelineStack(Stack):
         bucket.grant_read(classifier, "clean/*")
         bucket.grant_put(classifier, "enriched/*")
         if llm_enabled:
+            self._quality_gate(classifier, classifier_deployment)
             classifier.add_to_role_policy(
                 iam.PolicyStatement(
                     actions=["bedrock:InvokeModel"],
@@ -104,6 +112,7 @@ class CxPipelineStack(Stack):
         )
 
         self._catalog(bucket)
+        self._quarantine_alarm()
 
         athena.CfnWorkGroup(
             self,
@@ -149,14 +158,69 @@ class CxPipelineStack(Stack):
             comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
             treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
         )
-        codedeploy.LambdaDeploymentGroup(
+        dlq_alarm = cw.Alarm(
+            self,
+            f"{name}DeadLettersAlarm",
+            alarm_description=f"{name} events failed all retries and are waiting in the dead-letter queue",
+            metric=fn.dead_letter_queue.metric_approximate_number_of_messages_visible(period=Duration.minutes(5)),
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+        )
+        for a in (alarm, dlq_alarm):
+            a.add_alarm_action(cw_actions.SnsAction(self.alerts))
+        deployment = codedeploy.LambdaDeploymentGroup(
             self,
             f"{name}Deployment",
             alias=live,
             deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
             alarms=[alarm],
         )
-        return fn, live
+        return fn, live, deployment
+
+    def _quality_gate(self, target: lambda_.Function, deployment: codedeploy.LambdaDeploymentGroup) -> None:
+        # Scores the new version on labelled notes before any traffic shifts; catches releases that
+        # run without errors but classify badly, which the errors alarm cannot see.
+        gate = lambda_.Function(
+            self,
+            "QualityGate",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            code=lambda_.Code.from_asset(str(SRC / "quality_gate")),
+            handler="quality_gate.handler",
+            timeout=Duration.minutes(3),
+            memory_size=256,
+            environment={"TARGET_FUNCTION_ARN": target.current_version.function_arn, "MIN_ACCURACY": "0.8"},
+        )
+        target.current_version.grant_invoke(gate)
+        deployment.add_pre_hook(gate)
+
+    def _quarantine_alarm(self) -> None:
+        def metric(name: str) -> cw.Metric:
+            return cw.Metric(
+                namespace="CxPipeline",
+                metric_name=name,
+                dimensions_map={"Stage": "validator"},
+                statistic="Sum",
+                period=Duration.minutes(5),
+            )
+
+        rate = cw.MathExpression(
+            expression="IF(valid + quarantined > 0, quarantined / (valid + quarantined), 0)",
+            using_metrics={"valid": metric("valid"), "quarantined": metric("quarantined")},
+            label="Quarantine rate",
+            period=Duration.minutes(5),
+        )
+        cw.Alarm(
+            self,
+            "QuarantineRateAlarm",
+            alarm_description="More than 5% of uploaded rows were quarantined in a 5-minute window",
+            metric=rate,
+            threshold=0.05,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+        ).add_alarm_action(cw_actions.SnsAction(self.alerts))
 
     def _catalog(self, bucket: s3.Bucket) -> None:
         db = glue.CfnDatabase(

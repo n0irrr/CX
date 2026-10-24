@@ -25,9 +25,9 @@ flowchart LR
 | Validation | Schema, required fields, ID format, allowed values, date parsing and ordering, status/closure consistency, notes length, duplicate IDs. Bad rows go to `quarantine/` with machine-readable reasons; a file missing columns is quarantined whole rather than crashing. |
 | Error handling | Lambda retries a failed run twice, then sends the event to an SQS dead-letter queue (one per function); Bedrock calls use adaptive client retries on throttling; malformed LLM output falls back to `unclassified` instead of failing the batch. |
 | Cost | Keyword rules classify about 73% of generated issues for free (29% of the hand-written evaluation set, see below); only ambiguous notes reach Bedrock, batched 20 per call with short structured JSON output. Athena uses partition projection and a 1 GB per-query scan cutoff. Optional AWS Budgets alert. |
-| Release safety | Each Lambda has a `live` alias. CodeDeploy shifts 10% of traffic to a new version for 5 minutes, then 100%; a CloudWatch errors alarm on the alias triggers automatic rollback. |
-| Observability | Both functions emit CloudWatch Embedded Metric Format counts (valid, quarantined, classified by rules / LLM / fallback). |
-| Infrastructure | AWS CDK (Python); S3 is private, encrypted, SSL-only. GitHub Actions runs lint, 40 tests and `cdk synth` on every push; an optional deploy job (after tests and synth pass) uses OIDC and is off by default. |
+| Release safety | Each Lambda has a `live` alias. CodeDeploy shifts 10% of traffic to a new version for 5 minutes, then 100%; a CloudWatch errors alarm on the alias triggers automatic rollback. Before any classifier traffic shifts, a quality gate Lambda scores the new version on 20 labelled notes and fails the deployment below 80% accuracy, catching releases that run cleanly but classify badly. |
+| Observability | Both functions emit CloudWatch Embedded Metric Format counts (valid, quarantined, classified by rules / LLM / fallback). An SNS topic emails alerts when a release trips its errors alarm, when events land in a dead-letter queue, or when more than 5% of uploaded rows are quarantined in a 5-minute window. |
+| Infrastructure | AWS CDK (Python); S3 is private, encrypted, SSL-only. GitHub Actions runs lint, 47 tests and `cdk synth` on every push; an optional deploy job (after tests and synth pass) uses OIDC and is off by default. |
 
 Root-cause categories: `equipment_defect`, `installation_workmanship`, `design_issue`, `controls_integration`, `documentation`.
 
@@ -56,6 +56,7 @@ app.py, cdk.json          CDK entry point and config
 infra/stack.py            All infrastructure
 src/validator/            Validator Lambda
 src/classifier/           Rules + Bedrock classifier Lambda
+src/quality_gate/         Pre-traffic accuracy check for classifier releases
 scripts/generate_data.py  Synthetic issue log generator
 scripts/evaluate.py       Accuracy and cost against eval/labelled_notes.csv
 eval/labelled_notes.csv   Labelled evaluation notes
@@ -80,7 +81,7 @@ Prerequisites: an AWS account, AWS CLI configured, Node.js, and `npm install -g 
 
 1. **Check Bedrock model access** for your account and region (new accounts may need AWS to approve Bedrock first). The default model is Amazon Nova 2 Lite through its global inference profile (`global.amazon.nova-2-lite-v1:0`); any Bedrock Converse model works via `-c model_id=<id>` (Claude 5 models are called at low effort). To skip Bedrock entirely and run at zero model cost, deploy with `-c llm_enabled=false`: ambiguous issues are then marked `unclassified` and the classifier gets no Bedrock permissions.
 2. Bootstrap once: `cdk bootstrap`
-3. Deploy, with a budget alert: `cdk deploy -c budget_email=you@example.com -c budget_usd=10`
+3. Deploy, with a budget alert and pipeline alerts: `cdk deploy -c budget_email=you@example.com -c budget_usd=10 -c alert_email=you@example.com` (confirm the SNS subscription email AWS sends)
 4. Note the `BucketName` output, then upload data:
    ```bash
    aws s3 cp data/issues_YYYYMMDD.csv s3://<BucketName>/raw/
@@ -97,7 +98,11 @@ Tear down with `cdk destroy` (the bucket and its contents are deleted).
 
 Change anything in `src/validator/validator.py` and redeploy: CodeDeploy runs the canary, visible under CodeDeploy > Deployments. To watch a rollback, make the handler raise an exception, deploy, then upload a CSV during the 5-minute window. The errors alarm fires and traffic returns to the previous version.
 
-Measured on the live stack: a deliberately failing classifier received 10% of traffic, 4 of 40 invocations hit it and failed, the errors alarm fired about a minute after the first error, and CodeDeploy moved the `live` alias back to the previous version 10 seconds later: about 70 seconds from first error to full rollback, with no manual action. CloudFormation then reverted the stack. The alarm watches Lambda errors, so it catches crashing releases, not a release that runs cleanly but labels issues wrongly.
+Measured on the live stack: a deliberately failing classifier received 10% of traffic, 4 of 40 invocations hit it and failed, the errors alarm fired about a minute after the first error, and CodeDeploy moved the `live` alias back to the previous version 10 seconds later: about 70 seconds from first error to full rollback, with no manual action. CloudFormation then reverted the stack. The errors alarm only catches crashing releases; the quality gate (added after this run) covers releases that run cleanly but label issues wrongly. Its 20 samples come from the evaluation set, so it is a regression check rather than an independent accuracy measure.
+
+| Canary stopped by the alarm | Errors alarm | Stack reverted |
+|---|---|---|
+| ![CodeDeploy deployment stopped by alarm, traffic back at 100% original](docs/img/codedeploy-rollback.png) | ![Classifier errors alarm spike](docs/img/errors-alarm.png) | ![CloudFormation UPDATE_ROLLBACK_COMPLETE](docs/img/stack-rollback.png) |
 
 ### CI deploys
 

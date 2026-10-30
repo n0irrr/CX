@@ -35,7 +35,7 @@ flowchart LR
 | Cost | Keyword rules classify about 73% of generated issues for free (29% of the hand-written evaluation set, see below); only ambiguous notes reach Bedrock, batched 20 per call with short structured JSON output. Athena uses partition projection and a 1 GB per-query scan cutoff. Optional AWS Budgets alert. |
 | Release safety | Each Lambda has a `live` alias. CodeDeploy shifts 10% of traffic to a new version for 5 minutes, then 100%; a CloudWatch errors alarm on the alias triggers automatic rollback. Before any classifier traffic shifts, a quality gate Lambda scores the new version on 20 labelled notes and fails the deployment below 80% accuracy, catching releases that run cleanly but classify badly. |
 | Observability | Both functions emit CloudWatch Embedded Metric Format counts (valid, quarantined, classified by rules / LLM / fallback). An SNS topic emails alerts when a release trips its errors alarm, when events land in a dead-letter queue, or when more than 5% of uploaded rows are quarantined in a 5-minute window. |
-| Infrastructure | AWS CDK (Python); S3 is private, encrypted, SSL-only. GitHub Actions runs lint, 47 tests and `cdk synth` on every push; an optional deploy job (after tests and synth pass) uses OIDC and is off by default. |
+| Infrastructure | AWS CDK (Python); S3 is private, encrypted, SSL-only. GitHub Actions runs lint, 80 tests (including a fault-injected stream soak test) and `cdk synth` on every push; an optional deploy job (after tests and synth pass) uses OIDC and is off by default. |
 
 Root-cause categories: `equipment_defect`, `installation_workmanship`, `design_issue`, `controls_integration`, `documentation`.
 
@@ -57,6 +57,48 @@ PYTHONPATH=src/classifier python scripts/evaluate.py --llm    # rule misses go t
 
 Costs use ap-southeast-1 on-demand token prices; model accuracy varies by about one note between runs, and with 70 notes each figure carries roughly ±6 points of uncertainty. The rules are precise but narrow: on realistic phrasing most issues fall through to the model, so the free share is far lower than on synthetic data. Nova Lite matches Nova 2 Lite within one note at an eighth of the cost; switch with `-c model_id=apac.amazon.nova-lite-v1:0`.
 
+## Streaming telemetry (optional)
+
+Issue logs arrive in batches, but commissioning also produces a continuous stream: BMS trend data from CRAHs and chillers during functional and integrated systems testing. With `-c streaming=true` the stack adds a second, always-on path that ingests simulated sensor readings and turns sustained out-of-spec readings into Cx issues, which then flow through the batch pipeline above like any uploaded issue.
+
+```mermaid
+flowchart LR
+    P[Sensor simulator] -->|PutRecords, key = equipment tag| K[Kinesis stream]
+    K -->|batches of 100, 1 s window| T[Telemetry Lambda]
+    T <--> S[(DynamoDB sensor state)]
+    T --> TS[(S3 telemetry/)]
+    T --> TQ[(S3 telemetry-quarantine/)]
+    T -->|5 consecutive out-of-spec readings| R[(S3 raw/ issue CSV)]
+    R --> V[Validator and classifier]
+    K -. retries exhausted .-> D[SQS dead-letter queue]
+```
+
+| Concern | Approach |
+|---|---|
+| Ordering | Partition key is the equipment tag, so each sensor's readings stay in order on one shard. |
+| Bad records | Malformed JSON, missing fields, non-numeric or physically impossible values go to `telemetry-quarantine/` with reasons and never fail the batch, so one poison record cannot block a shard. |
+| Partial failures | The consumer reports the lowest sequence number it could not commit (`ReportBatchItemFailures`), writes only the records before it, and Lambda retries from there. Up to 10 retries with batch bisection, then batch metadata goes to an SQS dead-letter queue (records stay replayable from the stream for 24 hours). |
+| Idempotency | Output keys are derived from shard and first sequence number, so a retried batch overwrites rather than duplicates. Per-sensor state carries a timestamp watermark and is written with a conditional update, so replays and producer duplicates never double count; an issue's ID and key are derived from the excursion's start, so it is raised once even if the state write after it fails. |
+| Producer | Batches up to 500 records per `PutRecords` and resends only the entries Kinesis rejected, with jittered backoff. |
+| Observability | Per-batch metrics for readings, quarantined, duplicates, issues raised, retried records and end-to-end latency (event time to processing, as a distribution for p50/p99). Alarms on iterator age above 60 s for 3 minutes and on dead letters, both to the alerts topic. Athena tables `telemetry` and `telemetry_quarantine`. |
+
+### Testing the stream
+
+The load test runs the real consumer against either an in-memory Kinesis that mimics an event source mapping (shard routing, checkpoints, retry from the reported failure, dead-lettering) or the deployed stack. It injects bad records, producer duplicates, throttled puts and failing consumer writes, then checks the output against the simulator's ground truth: every valid reading stored (or accounted for in the dead-letter queue), every bad record quarantined, and exactly one issue per sustained excursion.
+
+```bash
+export PYTHONPATH=src/telemetry:scripts
+python scripts/stream_loadtest.py local --duration 600 --sensors 50 --fail-rate 0.2 --throttle-rate 0.05 --shards 2
+python scripts/stream_loadtest.py live --duration 300 --sensors 20 --hz 2           # after deploying with streaming
+python scripts/stream_loadtest.py live --duration 300 --fail-rate 0.2               # same, with 20% of consumer writes failing
+```
+
+Local run, 10 simulated minutes of 50 sensors (30,265 records) with 5% of puts throttled and 20% of consumer writes failing: 1,630 throttled puts resent with none dropped, 478 of 948 batches partially failed and were retried, none dead-lettered, all 29,386 valid readings stored with no retry duplicates, all 614 bad records quarantined, and 84 issues raised for 84 excursions. Live mode additionally reports throughput, latency percentiles and maximum iterator age from CloudWatch. A smaller version of the local run is part of the test suite.
+
+### Streaming cost
+
+Streaming is off by default because a provisioned shard bills by the hour whether or not data flows: about $0.02 per shard-hour (roughly $13 a month left running), plus a small per-million PUT charge. Deploy it for a test session and remove it afterwards with a normal `cdk deploy` (without the flag). Lambda's polling of the stream is free; DynamoDB is on-demand and only written when a sensor's excursion state changes. SQS was considered and rejected: it has no replay and no per-key ordering, both of which the excursion logic relies on.
+
 ## Layout
 
 ```
@@ -65,8 +107,11 @@ infra/stack.py            All infrastructure
 src/validator/            Validator Lambda
 src/classifier/           Rules + Bedrock classifier Lambda
 src/quality_gate/         Pre-traffic accuracy check for classifier releases
+src/telemetry/            Kinesis consumer for streamed BMS telemetry (optional)
 scripts/generate_data.py  Synthetic issue log generator
 scripts/evaluate.py       Accuracy and cost against eval/labelled_notes.csv
+scripts/stream_producer.py  Synthetic BMS sensor stream into Kinesis
+scripts/stream_loadtest.py  Load and fault test for the stream, in memory or against AWS
 eval/labelled_notes.csv   Labelled evaluation notes
 dashboard/app.py          Streamlit dashboard on Athena
 tests/                    Unit tests and CDK template assertions

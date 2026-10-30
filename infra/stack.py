@@ -6,13 +6,17 @@ from aws_cdk import aws_budgets as budgets
 from aws_cdk import aws_cloudwatch as cw
 from aws_cdk import aws_cloudwatch_actions as cw_actions
 from aws_cdk import aws_codedeploy as codedeploy
+from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_glue as glue
 from aws_cdk import aws_iam as iam
+from aws_cdk import aws_kinesis as kinesis
 from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_lambda_event_sources as event_sources
 from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_s3_notifications as s3n
 from aws_cdk import aws_sns as sns
 from aws_cdk import aws_sns_subscriptions as subs
+from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
 SRC = Path(__file__).resolve().parent.parent / "src"
@@ -38,6 +42,27 @@ RECORD_COLUMNS = [
 TABLES = {
     "issues": ("enriched/", [(c, "string") for c in RECORD_COLUMNS + ["category", "classified_by"]]),
     "quarantine": ("quarantine/", [("line_no", "int"), ("errors", "array<string>"), ("source_key", "string")]),
+}
+TELEMETRY_TABLES = {
+    "telemetry": (
+        "telemetry/",
+        [
+            ("reading_id", "string"),
+            ("site", "string"),
+            ("equipment_tag", "string"),
+            ("point", "string"),
+            ("value", "double"),
+            ("unit", "string"),
+            ("ts", "bigint"),
+            ("in_spec", "boolean"),
+            ("arrived_at", "bigint"),
+            ("sequence_number", "string"),
+        ],
+    ),
+    "telemetry_quarantine": (
+        "telemetry-quarantine/",
+        [("sequence_number", "string"), ("errors", "array<string>"), ("data", "string")],
+    ),
 }
 
 
@@ -111,8 +136,11 @@ class CxPipelineStack(Stack):
             s3.NotificationKeyFilter(prefix="clean/", suffix=".jsonl"),
         )
 
-        self._catalog(bucket)
+        db = self._catalog(bucket, TABLES)
         self._quarantine_alarm()
+        if str(ctx("streaming") or "false").lower() == "true":
+            self._telemetry(bucket)
+            self._catalog(bucket, TELEMETRY_TABLES, db)
 
         athena.CfnWorkGroup(
             self,
@@ -222,14 +250,86 @@ class CxPipelineStack(Stack):
             treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
         ).add_alarm_action(cw_actions.SnsAction(self.alerts))
 
-    def _catalog(self, bucket: s3.Bucket) -> None:
-        db = glue.CfnDatabase(
+    def _telemetry(self, bucket: s3.Bucket) -> None:
+        # Opt-in (-c streaming=true): a provisioned shard bills by the hour whether or not data flows.
+        stream = kinesis.Stream(
+            self,
+            "TelemetryStream",
+            shard_count=1,
+            retention_period=Duration.hours(24),
+            encryption=kinesis.StreamEncryption.MANAGED,
+        )
+        state = dynamodb.Table(
+            self,
+            "SensorState",
+            partition_key=dynamodb.Attribute(name="sensor", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        dlq = sqs.Queue(self, "TelemetryDeadLetters", retention_period=Duration.days(14), enforce_ssl=True)
+        fn = lambda_.Function(
+            self,
+            "Telemetry",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            code=lambda_.Code.from_asset(str(SRC / "telemetry")),
+            handler="telemetry.handler",
+            timeout=Duration.seconds(60),
+            memory_size=256,
+            environment={"BUCKET": bucket.bucket_name, "STATE_TABLE": state.table_name, "EXCURSION_READINGS": "5"},
+        )
+        fn.add_event_source(
+            event_sources.KinesisEventSource(
+                stream,
+                starting_position=lambda_.StartingPosition.LATEST,
+                batch_size=100,
+                max_batching_window=Duration.seconds(1),
+                report_batch_item_failures=True,
+                bisect_batch_on_error=True,
+                retry_attempts=10,
+                max_record_age=Duration.hours(1),
+                on_failure=event_sources.SqsDlq(dlq),
+            )
+        )
+        for prefix in ("telemetry/*", "telemetry-quarantine/*", "raw/telemetry-*"):
+            bucket.grant_put(fn, prefix)
+        state.grant_read_write_data(fn)
+
+        alarms = [
+            cw.Alarm(
+                self,
+                "TelemetryIteratorAgeAlarm",
+                alarm_description="Telemetry consumer is more than a minute behind the stream",
+                metric=fn.metric("IteratorAge", statistic="Maximum", period=Duration.minutes(1)),
+                threshold=60_000,
+                evaluation_periods=3,
+                comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+                treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            ),
+            cw.Alarm(
+                self,
+                "TelemetryDeadLettersAlarm",
+                alarm_description="Telemetry batches exhausted their retries and are waiting in the dead-letter queue",
+                metric=dlq.metric_approximate_number_of_messages_visible(period=Duration.minutes(5)),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            ),
+        ]
+        for a in alarms:
+            a.add_alarm_action(cw_actions.SnsAction(self.alerts))
+
+        CfnOutput(self, "TelemetryStreamName", value=stream.stream_name)
+        CfnOutput(self, "TelemetryFunctionName", value=fn.function_name)
+
+    def _catalog(self, bucket: s3.Bucket, tables: dict, db: glue.CfnDatabase | None = None) -> glue.CfnDatabase:
+        db = db or glue.CfnDatabase(
             self,
             "Database",
             catalog_id=self.account,
             database_input=glue.CfnDatabase.DatabaseInputProperty(name=DATABASE),
         )
-        for name, (prefix, columns) in TABLES.items():
+        for name, (prefix, columns) in tables.items():
             location = f"s3://{bucket.bucket_name}/{prefix}"
             table = glue.CfnTable(
                 self,
@@ -262,6 +362,7 @@ class CxPipelineStack(Stack):
                 ),
             )
             table.add_resource_dependency(db)
+        return db
 
     def _budget(self, email: str, limit_usd: float) -> None:
         budgets.CfnBudget(

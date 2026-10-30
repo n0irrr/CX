@@ -94,3 +94,29 @@ def test_alerts_email_on_failures_and_quarantine_spikes():
     alarms = t.find_resources("AWS::CloudWatch::Alarm")
     assert len(alarms) == 5
     assert all(a["Properties"].get("AlarmActions") for a in alarms.values())
+
+
+def test_streaming_is_opt_in():
+    t = _template()
+    t.resource_count_is("AWS::Kinesis::Stream", 0)
+    t.resource_count_is("AWS::DynamoDB::Table", 0)
+
+
+def test_streaming_consumer_handles_failures():
+    t = _template(streaming="true")
+    t.has_resource_properties("AWS::Kinesis::Stream", {"ShardCount": 1, "StreamEncryption": Match.any_value()})
+    t.has_resource_properties("AWS::DynamoDB::Table", {"BillingMode": "PAY_PER_REQUEST"})
+    t.has_resource_properties(
+        "AWS::Lambda::EventSourceMapping",
+        {
+            "FunctionResponseTypes": ["ReportBatchItemFailures"],
+            "BisectBatchOnFunctionError": True,
+            "MaximumRetryAttempts": 10,
+            "DestinationConfig": {"OnFailure": {"Destination": Match.any_value()}},
+        },
+    )
+    t.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {"MetricName": "IteratorAge", "Threshold": 60000, "AlarmActions": Match.any_value()},
+    )
+    t.resource_count_is("AWS::Glue::Table", 4)

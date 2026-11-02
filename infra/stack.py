@@ -78,6 +78,7 @@ class CxPipelineStack(Stack):
                 "MODEL_ID": model_id,
                 "LLM_ENABLED": str(llm_enabled).lower(),
                 "BATCH_SIZE": "20",
+                "LLM_CONCURRENCY": "4",
                 "CLEAN_PREFIX": "clean/",
                 "ENRICHED_PREFIX": "enriched/",
             },

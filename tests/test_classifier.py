@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 
@@ -70,6 +71,19 @@ def test_llm_calls_are_batched(monkeypatch):
 
     assert bedrock.calls == 3
     assert {r["category"] for r in out} == {"design_issue"}
+
+
+def test_llm_batches_run_concurrently(monkeypatch):
+    monkeypatch.setattr(classifier, "BATCH_SIZE", 1)
+    monkeypatch.setattr(classifier, "LLM_CONCURRENCY", 3)
+    barrier = threading.Barrier(3, timeout=5)
+
+    def responder(items):
+        barrier.wait()  # deadlocks (BrokenBarrierError) unless 3 calls are in flight at once
+        return json.dumps([{"id": i["id"], "category": "documentation"} for i in items])
+
+    out = classifier.classify(_records(*["Unit noisy under load"] * 3), FakeBedrock(responder))
+    assert [r["classified_by"] for r in out] == ["llm"] * 3
 
 
 def test_parse_labels_tolerates_wrapping_text():

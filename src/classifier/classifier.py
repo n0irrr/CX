@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from urllib.parse import unquote_plus
 
@@ -36,6 +37,7 @@ SYSTEM_PROMPT = (
 MODEL_ID = os.environ.get("MODEL_ID", "global.amazon.nova-2-lite-v1:0")
 LLM_ENABLED = os.environ.get("LLM_ENABLED", "true").lower() == "true"
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "20"))
+LLM_CONCURRENCY = int(os.environ.get("LLM_CONCURRENCY", "4"))
 CLEAN_PREFIX = os.environ.get("CLEAN_PREFIX", "clean/")
 ENRICHED_PREFIX = os.environ.get("ENRICHED_PREFIX", "enriched/")
 
@@ -47,7 +49,8 @@ def _s3():
 
 @cache
 def _bedrock():
-    return boto3.client("bedrock-runtime", config=Config(retries={"max_attempts": 6, "mode": "adaptive"}))
+    config = Config(retries={"max_attempts": 6, "mode": "adaptive"}, max_pool_connections=max(10, LLM_CONCURRENCY))
+    return boto3.client("bedrock-runtime", config=config)
 
 
 def rule_classify(notes: str) -> str | None:
@@ -75,21 +78,26 @@ def _model_fields(model_id: str) -> dict:
     return {}
 
 
+def _classify_batch(batch: list[dict], client) -> dict[str, str]:
+    payload = json.dumps([{"id": r["issue_id"], "notes": r["notes"]} for r in batch])
+    resp = client.converse(
+        modelId=MODEL_ID,
+        system=[{"text": SYSTEM_PROMPT}],
+        messages=[{"role": "user", "content": [{"text": payload}]}],
+        inferenceConfig={"maxTokens": 4096},
+        **_model_fields(MODEL_ID),
+    )
+    return _parse_labels("".join(block.get("text", "") for block in resp["output"]["message"]["content"]))
+
+
 def llm_classify(records: list[dict], client=None) -> dict[str, str]:
+    # Batches are independent, so overlap their Bedrock round trips; adaptive retries absorb throttling.
     client = client or _bedrock()
+    batches = [records[i : i + BATCH_SIZE] for i in range(0, len(records), BATCH_SIZE)]
     labels = {}
-    for i in range(0, len(records), BATCH_SIZE):
-        batch = records[i : i + BATCH_SIZE]
-        payload = json.dumps([{"id": r["issue_id"], "notes": r["notes"]} for r in batch])
-        resp = client.converse(
-            modelId=MODEL_ID,
-            system=[{"text": SYSTEM_PROMPT}],
-            messages=[{"role": "user", "content": [{"text": payload}]}],
-            inferenceConfig={"maxTokens": 4096},
-            **_model_fields(MODEL_ID),
-        )
-        text = "".join(block.get("text", "") for block in resp["output"]["message"]["content"])
-        labels |= _parse_labels(text)
+    with ThreadPoolExecutor(max_workers=max(1, min(LLM_CONCURRENCY, len(batches)))) as pool:
+        for batch_labels in pool.map(lambda b: _classify_batch(b, client), batches):
+            labels |= batch_labels
     return labels
 
 
